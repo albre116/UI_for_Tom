@@ -32,6 +32,14 @@ shinyServer(function(input, output, session){ # pass in a session argument
     matrixCustom('pop_single', 'Single Race Haplotype List', state_pop[1,1,drop=F])
     })
   
+  
+  output$naive_prior<-renderUI({
+    browser()
+    start<-data.frame(input$pop_multi,prior=1/nrow(input$pop_multi))
+    matrixCustom('naive_prior', 'Priors to Be Applied',start)
+  })
+  
+  
 
   
   haplotypesData <- reactive({
@@ -47,6 +55,15 @@ shinyServer(function(input, output, session){ # pass in a session argument
     class(haplotypePairs$haplotype_pairs[[3]])<-"numeric"
     class(haplotypePairs$haplotype_pairs[[6]])<-"numeric"
     class(haplotypePairs$haplotype_pairs[[7]])<-"numeric"
+    
+    ####Construct Naive Prior R1 independent of R2#####
+    
+
+    
+    
+    
+    
+    
     ####left off here... need to figure out the 2X rule (urn sampling model)
     ###so in constructing a contingency table and looking at what is margined out
     ###pradeep doesn't double list [H1=a,H2=b|R1=CAU,R2=AFA] for the mirror [H1=b,H2=a|R1=AFA,R2=CAU] so any
@@ -95,6 +112,16 @@ shinyServer(function(input, output, session){ # pass in a session argument
             panel.grid.major.y=element_line(colour="grey60",linetype="dashed"))
     print(thePlot)
     
+  })
+  
+  output$prior<-renderPlot({
+    dat<-haplotypesData ()[['likelihood']]
+    thePlot<-ggplot(dat,aes(x=likelihood,y=reorder(Race,likelihood)))+geom_segment(aes(yend=Race),xend=0)+
+      geom_point(size=3)+theme_bw()+xlab("Likelihood")+ylab("Race Group")+ggtitle("Likelihood Contribution")+
+      theme(panel.grid.major.x=element_blank(),
+            panel.grid.minor.x=element_blank(),
+            panel.grid.major.y=element_line(colour="grey60",linetype="dashed"))
+    print(thePlot)
     
   })
   
