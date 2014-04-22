@@ -7,8 +7,8 @@ library(plyr)
 library(ggplot2)
 library(shinyIncubator)
 
+
 ###initialize values in array
-test<-data.frame(c("10/24/2014","10/22/12"),c(1,2))
 init<-haplotypePairImpute()###call the function to get the HLA codes
 state_mug<-rbind(data.frame(init$mug[1]),
                  data.frame(init$mug[2]),
@@ -16,28 +16,36 @@ state_mug<-rbind(data.frame(init$mug[1]),
                  data.frame(init$mug[4]),
                  data.frame(init$mug[5]))
 state_pop<-data.frame(init$populations)
+chos_ini<-as.character(state_pop[[1]])
 
 shinyServer(function(input, output, session){ # pass in a session argument
+  
+  output$mlt_chooser<-renderUI({
+    chooserInput("mlt_race_pairs", "Available", "Selected",
+                 c(), chos_ini, size = 10, multiple = TRUE
+    )
+    
+  })
+  
+  
+  output$single_chooser<-renderUI({
+    selectInput("single_race", "Race for Single Haplotype List",
+                 choices=chos_ini, selected="CAU")
+    
+  })
   
   output$table_mug<-renderUI({
     matrixCustom('mug', 'MUG Typing', state_mug)
     })
   
-  output$table_pop_multi<-renderUI({
-    matrixCustom('pop_multi', 'Multi Race Haplotype Pairs', state_pop)
-    })
-  
-  
-  output$table_pop_single<-renderUI({
-    matrixCustom('pop_single', 'Single Race Haplotype List', state_pop[1,1,drop=F])
-    })
-  
+
   
   output$naive_prior<-renderUI({
-    browser()
-    start<-data.frame(input$pop_multi,prior=1/nrow(input$pop_multi))
+    start<-data.frame(input$mlt_race_pairs$right,i_prior=1/length(input$mlt_race_pairs$right))
     matrixCustom('naive_prior', 'Priors to Be Applied',start)
   })
+  
+  
   
   
 
@@ -49,20 +57,20 @@ shinyServer(function(input, output, session){ # pass in a session argument
     init$mug[[3]][1:3]<-tmp[3,]
     init$mug[[4]][1:3]<-tmp[4,]
     init$mug[[5]][1:3]<-tmp[5,]
-    init$populations<-as.character(input$pop_multi)
-    haplotypes<-haplotypeImpute(init$mug,as.list(input$pop_single))
+    init$populations<-input$mlt_race_pairs$right
+    haplotypes<-haplotypeImpute(init$mug,input$single_race)
     haplotypePairs<-haplotypePairImpute(init$mug,init$populations)
     class(haplotypePairs$haplotype_pairs[[3]])<-"numeric"
     class(haplotypePairs$haplotype_pairs[[6]])<-"numeric"
     class(haplotypePairs$haplotype_pairs[[7]])<-"numeric"
     
     ####Construct Naive Prior R1 independent of R2#####
-    
-
-    
-    
-    
-    
+    if(!is.null(input$naive_prior)){
+    prior_naive<-data.frame("Race"=input$naive_prior[,1],"Prior"=input$naive_prior[,2])
+    class(prior_naive[[2]])<-"numeric"} else{
+      prior_naive<-NULL
+    }
+        
     
     ####left off here... need to figure out the 2X rule (urn sampling model)
     ###so in constructing a contingency table and looking at what is margined out
@@ -93,20 +101,33 @@ shinyServer(function(input, output, session){ # pass in a session argument
         }
       }
     }
+    lik$Race=factor(lik$Race,levels=lik$Race[order(lik$likelihood,decreasing=F)])###sort likelihood for display
     
+
+    prior<-lik
+    colnames(prior)[2]<-"Prior"
+    prior$Prior=0
+    #####Compute the Priors####
+    if(!is.null(prior_naive)){
+    for (i in 1:nrow(lik)){
+      R1=strsplit(as.character(prior$Race[i]),"-")[[1]][1]
+      R2=strsplit(as.character(prior$Race[i]),"-")[[1]][2]
+      prior$Prior[i]=prior_naive$Prior[prior_naive$Race==R1]*prior_naive$Prior[prior_naive$Race==R2]
+        
+    }}
     
       
       
     
-      list(haplotypes=haplotypes,haplotypePairs=haplotypePairs,likelihood=lik)
+      list(haplotypes=haplotypes,haplotypePairs=haplotypePairs,likelihood=lik,prior=prior)
   })
   
   
 
   output$graph_lik<-renderPlot({
     dat<-haplotypesData ()[['likelihood']]
-    thePlot<-ggplot(dat,aes(x=likelihood,y=reorder(Race,likelihood)))+geom_segment(aes(yend=Race),xend=0)+
-      geom_point(size=3)+theme_bw()+xlab("Likelihood")+ylab("Race Group")+ggtitle("Likelihood Contribution")+
+    thePlot<-ggplot(dat,aes(x=likelihood,y=Race))+geom_segment(aes(yend=Race),xend=0)+
+      geom_point(size=3)+theme_bw()+xlab("Likelihood")+ylab("Race Group")+ggtitle("Likelihood Contribution")+xlim(0,max(dat$likelihood))
       theme(panel.grid.major.x=element_blank(),
             panel.grid.minor.x=element_blank(),
             panel.grid.major.y=element_line(colour="grey60",linetype="dashed"))
@@ -114,14 +135,14 @@ shinyServer(function(input, output, session){ # pass in a session argument
     
   })
   
-  output$prior<-renderPlot({
-    dat<-haplotypesData ()[['likelihood']]
-    thePlot<-ggplot(dat,aes(x=likelihood,y=reorder(Race,likelihood)))+geom_segment(aes(yend=Race),xend=0)+
-      geom_point(size=3)+theme_bw()+xlab("Likelihood")+ylab("Race Group")+ggtitle("Likelihood Contribution")+
+  output$prior_plot<-renderPlot({
+    dat<-haplotypesData ()[['prior']]
+    thePlot_2<-ggplot(dat,aes(x=Prior,y=Race))+geom_segment(aes(yend=Race),xend=0)+
+      geom_point(size=3)+theme_bw()+xlab("Prior")+ylab("Race Group")+ggtitle("Prior Contribution")+xlim(0,max(dat$Prior))
       theme(panel.grid.major.x=element_blank(),
             panel.grid.minor.x=element_blank(),
             panel.grid.major.y=element_line(colour="grey60",linetype="dashed"))
-    print(thePlot)
+    print(thePlot_2)
     
   })
   
@@ -136,17 +157,7 @@ shinyServer(function(input, output, session){ # pass in a session argument
   })
   
   
-  output$mug <- renderDataTable({
-    data.frame(input$mug)
-  })
-  
-  output$pop_multi <- renderDataTable({
-    data.frame(populations=input$pop_multi)
-  })
-  
-  output$pop_single <- renderDataTable({
-    data.frame(population=c(input$pop_single,NA))
-  })
+
 
   
 })
