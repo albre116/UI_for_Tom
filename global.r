@@ -83,7 +83,6 @@ haplotypeImpute<-function(mug=mug_ini,populations=populations_ini[1]){
 
 
 haplotypePairImpute<-function(mug=mug_ini,populations=populations_ini){
-  
   host <- 'http://b1haplogic-s1:8080'
   httpHeaders <- c(Accept = "application/json",
                    'Content-Type' = 'application/json;charset=UTF-8')

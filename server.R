@@ -22,7 +22,7 @@ shinyServer(function(input, output, session){ # pass in a session argument
   
   output$mlt_chooser<-renderUI({
     chooserInput("mlt_race_pairs", "Available", "Selected",
-                 c(), chos_ini, size = 10, multiple = TRUE
+                 chos_ini[-c(2,14)],chos_ini[c(2,14)], size = 10, multiple = TRUE
     )
     
   })
@@ -30,7 +30,7 @@ shinyServer(function(input, output, session){ # pass in a session argument
   
   output$single_chooser<-renderUI({
     selectInput("single_race", "Race for Single Haplotype List",
-                 choices=chos_ini, selected="CAU")
+                 choices=input$mlt_race_pairs$right, selected=NULL)
     
   })
   
@@ -38,6 +38,9 @@ shinyServer(function(input, output, session){ # pass in a session argument
     matrixCustom('mug', 'MUG Typing', state_mug)
     })
   
+  output$num_show<-renderUI({
+    numericInput('cut', 'Number of Classes To Cut Display At', 20)
+  })
 
   
   output$naive_prior<-renderUI({
@@ -45,31 +48,43 @@ shinyServer(function(input, output, session){ # pass in a session argument
     matrixCustom('naive_prior', 'Priors to Be Applied',start)
   })
   
-  
-  
-  
 
+
+  haplotypeSingle<-reactive({
+    tmp<-data.frame(input$mug)
+    HLA<-list()
+    for (i in 1:nrow(tmp)){
+      s <- list(locus=tmp[i,1], type1=tmp[i,2], type2=tmp[i,3])
+      HLA[[i]]<-s
+    }
+
+    if(input$single_race != c("")){
+      haplotypes<-haplotypeImpute(HLA,input$single_race)} else{
+        haplotypes=NULL
+      }
+    haplotypes
+    
+  })
+  
+  
+  
+  
+  
   
   haplotypesData <- reactive({
     tmp<-data.frame(input$mug)
-    init$mug[[1]][1:3]<-tmp[1,]
-    init$mug[[2]][1:3]<-tmp[2,]
-    init$mug[[3]][1:3]<-tmp[3,]
-    init$mug[[4]][1:3]<-tmp[4,]
-    init$mug[[5]][1:3]<-tmp[5,]
+    HLA<-list()
+    for (i in 1:nrow(tmp)){
+      s <- list(locus=tmp[i,1], type1=tmp[i,2], type2=tmp[i,3])
+      HLA[[i]]<-s
+    }
     init$populations<-input$mlt_race_pairs$right
-    haplotypes<-haplotypeImpute(init$mug,input$single_race)
-    haplotypePairs<-haplotypePairImpute(init$mug,init$populations)
+    haplotypePairs<-haplotypePairImpute(HLA,init$populations)
     class(haplotypePairs$haplotype_pairs[[3]])<-"numeric"
     class(haplotypePairs$haplotype_pairs[[6]])<-"numeric"
     class(haplotypePairs$haplotype_pairs[[7]])<-"numeric"
     
-    ####Construct Naive Prior R1 independent of R2#####
-    if(!is.null(input$naive_prior)){
-    prior_naive<-data.frame("Race"=input$naive_prior[,1],"Prior"=input$naive_prior[,2])
-    class(prior_naive[[2]])<-"numeric"} else{
-      prior_naive<-NULL
-    }
+
         
     
     ####left off here... need to figure out the 2X rule (urn sampling model)
@@ -101,35 +116,69 @@ shinyServer(function(input, output, session){ # pass in a session argument
         }
       }
     }
-    lik$Race=factor(lik$Race,levels=lik$Race[order(lik$likelihood,decreasing=F)])###sort likelihood for display
-    
 
+    
+    ####Construct Naive Prior R1 independent of R2#####
+    if(!is.null(input$naive_prior)){
+      prior_naive<-data.frame("Race"=input$naive_prior[,1],"Prior"=input$naive_prior[,2])
+      class(prior_naive[[2]])<-"numeric"} else{
+        prior_naive<-NULL
+      }
+    
     prior<-lik
     colnames(prior)[2]<-"Prior"
     prior$Prior=0
     #####Compute the Priors####
     if(!is.null(prior_naive)){
-    for (i in 1:nrow(lik)){
+    for (i in 1:nrow(prior)){
       R1=strsplit(as.character(prior$Race[i]),"-")[[1]][1]
       R2=strsplit(as.character(prior$Race[i]),"-")[[1]][2]
       prior$Prior[i]=prior_naive$Prior[prior_naive$Race==R1]*prior_naive$Prior[prior_naive$Race==R2]
         
-    }}
+    }
+    
+    ###normalize Prior
+    prior$Prior<-prior$Prior/sum(prior$Prior)}
+    
+    
+    #####compute the Bayes call
+    call<-lik
+    colnames(call)[2]<-"Probability"
+    call$Probability=0
+    #####Compute the Priors####
+    if(!is.null(prior_naive)){
+      for (i in 1:nrow(call)){
+        call$Probability[i]=lik$likelihood[i]*prior$Prior[i]
+        
+      }
+    call$Probability<-call$Probability/(sum(call$Probability))
+      
+      
+    }
+    
+    
+    
+    
+    lik$Race=factor(lik$Race,levels=call$Race[order(call$Probability,decreasing=F)])###sort likelihood for display
+    prior$Race=factor(prior$Race,levels=call$Race[order(call$Probability,decreasing=F)])###sort prior for display
+    call$Race=factor(call$Race,levels=call$Race[order(call$Probability,decreasing=F)])###sort call for display
     
       
       
     
-      list(haplotypes=haplotypes,haplotypePairs=haplotypePairs,likelihood=lik,prior=prior)
+      list(haplotypePairs=haplotypePairs,likelihood=lik,prior=prior,call=call)
   })
   
   
 
-  output$graph_lik<-renderPlot({
+  output$lik_plot<-renderPlot({
     dat<-haplotypesData ()[['likelihood']]
+    dat<-dat[order(dat$Race)<=input$cut,]
     thePlot<-ggplot(dat,aes(x=likelihood,y=Race))+geom_segment(aes(yend=Race),xend=0)+
-      geom_point(size=3)+theme_bw()+xlab("Likelihood")+ylab("Race Group")+ggtitle("Likelihood Contribution")+xlim(0,max(dat$likelihood))
+      geom_point(size=3)+theme_bw()+xlab("Likelihood")+ggtitle("Likelihood Contribution")+xlim(0,max(dat$likelihood))
       theme(panel.grid.major.x=element_blank(),
             panel.grid.minor.x=element_blank(),
+            axis.title.y=element_blank(),
             panel.grid.major.y=element_line(colour="grey60",linetype="dashed"))
     print(thePlot)
     
@@ -137,15 +186,35 @@ shinyServer(function(input, output, session){ # pass in a session argument
   
   output$prior_plot<-renderPlot({
     dat<-haplotypesData ()[['prior']]
-    thePlot_2<-ggplot(dat,aes(x=Prior,y=Race))+geom_segment(aes(yend=Race),xend=0)+
-      geom_point(size=3)+theme_bw()+xlab("Prior")+ylab("Race Group")+ggtitle("Prior Contribution")+xlim(0,max(dat$Prior))
+    dat<-dat[order(dat$Race)<=input$cut,]
+    thePlot<-ggplot(dat,aes(x=Prior,y=Race))+geom_segment(aes(yend=Race),xend=0)+
+      geom_point(size=3)+theme_bw()+xlab("Prior")+ggtitle("Prior Contribution")+xlim(0,max(dat$Prior))
       theme(panel.grid.major.x=element_blank(),
             panel.grid.minor.x=element_blank(),
+            axis.title.y=element_blank(),
             panel.grid.major.y=element_line(colour="grey60",linetype="dashed"))
-    print(thePlot_2)
+    print(thePlot)
     
   })
   
+  output$call_plot<-renderPlot({
+    browser()
+    dat<-haplotypesData ()[['call']]
+    dat<-dat[order(dat$Race)<=input$cut,]
+    thePlot<-ggplot(dat,aes(x=Probability,y=Race))+geom_segment(aes(yend=Race),xend=0)+
+      geom_point(size=3)+theme_bw()+xlab("Probability")+ggtitle("Bayes Classifier Call")+xlim(0,max(dat$Probability))
+    theme(panel.grid.major.x=element_blank(),
+          panel.grid.minor.x=element_blank(),
+          axis.title.y=element_blank(),
+          panel.grid.major.y=element_line(colour="grey60",linetype="dashed"))
+    print(thePlot)
+    
+  })
+  
+  
+  output$call_table<-renderDataTable({
+  haplotypesData ()[['call']]    
+  })
   
   output$haplotypePairs <- renderDataTable({
   haplotypesData()$haplotypePairs$haplotype_pairs
@@ -153,7 +222,7 @@ shinyServer(function(input, output, session){ # pass in a session argument
   
   
   output$haplotypes <- renderDataTable({
-    haplotypesData()$haplotypes$haplotypes
+    haplotypeSingle()$haplotypes
   })
   
   
