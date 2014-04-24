@@ -6,6 +6,9 @@ library(shiny)
 library(plyr)
 library(ggplot2)
 library(shinyIncubator)
+library(ggmap)
+library(acs)
+api.key.install(key="a4967dc495fd5b445d602daf6e9626c4bcf2c050") ###key for acs pakages to access census API
 
 
 ###initialize values in array
@@ -48,10 +51,15 @@ shinyServer(function(input, output, session){ # pass in a session argument
     matrixCustom('naive_prior', 'Priors to Be Applied',start)
   })
   
-
+  
+  output$update_mug<-renderUI({
+    actionButton("update_mug", "Update Mug")
+  })
+  
 
   haplotypeSingle<-reactive({
-    tmp<-data.frame(input$mug)
+    input$update_mug
+    tmp<-isolate(data.frame(input$mug))
     HLA<-list()
     for (i in 1:nrow(tmp)){
       s <- list(locus=tmp[i,1], type1=tmp[i,2], type2=tmp[i,3])
@@ -72,7 +80,8 @@ shinyServer(function(input, output, session){ # pass in a session argument
   
   
   haplotypesData <- reactive({
-    tmp<-data.frame(input$mug)
+    input$update_mug
+    tmp<-isolate(data.frame(input$mug))
     HLA<-list()
     for (i in 1:nrow(tmp)){
       s <- list(locus=tmp[i,1], type1=tmp[i,2], type2=tmp[i,3])
@@ -97,6 +106,8 @@ shinyServer(function(input, output, session){ # pass in a session argument
     ###by 2X for any multi to deal with the magining of the race phasing, not the haploypes because 2 copies are present
     ###(i.e. you do not multiply by 4X like you might think)
 
+    
+    ####Compute likelihood of HLA given Race1 & Race2
     pairs<-haplotypePairs$haplotype_pairs
     index<-paste(pairs$Race1,pairs$Race2,sep="-")
     lik<-data.frame("Race"=unique(index),"likelihood"=0)
@@ -136,7 +147,6 @@ shinyServer(function(input, output, session){ # pass in a session argument
       prior$Prior[i]=prior_naive$Prior[prior_naive$Race==R1]*prior_naive$Prior[prior_naive$Race==R2]
         
     }
-    
     ###normalize Prior
     prior$Prior<-prior$Prior/sum(prior$Prior)}
     
@@ -157,23 +167,26 @@ shinyServer(function(input, output, session){ # pass in a session argument
     }
     
     
-    
-    
-    lik$Race=factor(lik$Race,levels=call$Race[order(call$Probability,decreasing=F)])###sort likelihood for display
-    prior$Race=factor(prior$Race,levels=call$Race[order(call$Probability,decreasing=F)])###sort prior for display
-    call$Race=factor(call$Race,levels=call$Race[order(call$Probability,decreasing=F)])###sort call for display
+
+    idx<-1:length(call$Probability)
+    idx<-idx[order(call$Probability)]
+    lik$Race=factor(lik$Race,levels=call$Race[idx])###sort likelihood for display
+    prior$Race=factor(prior$Race,levels=call$Race[idx])###sort prior for display
+    call$Race=factor(call$Race,levels=call$Race[idx])###sort call for display
     
       
       
     
-      list(haplotypePairs=haplotypePairs,likelihood=lik,prior=prior,call=call)
+      list(haplotypePairs=haplotypePairs,likelihood=lik,prior=prior,call=call,idx=idx)
   })
   
   
 
   output$lik_plot<-renderPlot({
     dat<-haplotypesData ()[['likelihood']]
-    dat<-dat[order(dat$Race)<=input$cut,]
+    idx<-haplotypesData ()[['idx']]
+    idx<-abs(order(idx)-(length(idx)+1))###generate ranking 1 to N
+    dat<-dat[idx<=input$cut,]
     thePlot<-ggplot(dat,aes(x=likelihood,y=Race))+geom_segment(aes(yend=Race),xend=0)+
       geom_point(size=3)+theme_bw()+xlab("Likelihood")+ggtitle("Likelihood Contribution")+xlim(0,max(dat$likelihood))
       theme(panel.grid.major.x=element_blank(),
@@ -186,7 +199,9 @@ shinyServer(function(input, output, session){ # pass in a session argument
   
   output$prior_plot<-renderPlot({
     dat<-haplotypesData ()[['prior']]
-    dat<-dat[order(dat$Race)<=input$cut,]
+    idx<-haplotypesData ()[['idx']]
+    idx<-abs(order(idx)-(length(idx)+1))###generate ranking 1 to N
+    dat<-dat[idx<=input$cut,]
     thePlot<-ggplot(dat,aes(x=Prior,y=Race))+geom_segment(aes(yend=Race),xend=0)+
       geom_point(size=3)+theme_bw()+xlab("Prior")+ggtitle("Prior Contribution")+xlim(0,max(dat$Prior))
       theme(panel.grid.major.x=element_blank(),
@@ -198,11 +213,12 @@ shinyServer(function(input, output, session){ # pass in a session argument
   })
   
   output$call_plot<-renderPlot({
-    browser()
     dat<-haplotypesData ()[['call']]
-    dat<-dat[order(dat$Race)<=input$cut,]
+    idx<-haplotypesData ()[['idx']]
+    idx<-abs(order(idx)-(length(idx)+1))###generate ranking 1 to N
+    dat<-dat[idx<=input$cut,]
     thePlot<-ggplot(dat,aes(x=Probability,y=Race))+geom_segment(aes(yend=Race),xend=0)+
-      geom_point(size=3)+theme_bw()+xlab("Probability")+ggtitle("Bayes Classifier Call")+xlim(0,max(dat$Probability))
+      geom_point(size=3)+theme_bw()+xlab("Probability")+ggtitle("Bayes Classifier Call")+xlim(0,max(dat$Probability))+
     theme(panel.grid.major.x=element_blank(),
           panel.grid.minor.x=element_blank(),
           axis.title.y=element_blank(),
@@ -213,7 +229,10 @@ shinyServer(function(input, output, session){ # pass in a session argument
   
   
   output$call_table<-renderDataTable({
-  haplotypesData ()[['call']]    
+  dat=haplotypesData ()[['call']]
+  idx<-haplotypesData ()[['idx']]
+  idx<-abs(order(idx)-(length(idx)+1))
+  data.frame(dat,"Rank"=idx)
   })
   
   output$haplotypePairs <- renderDataTable({
@@ -226,7 +245,66 @@ shinyServer(function(input, output, session){ # pass in a session argument
   })
   
   
+  output$address_input<-renderUI({
+    textInput("Address","Input Search Address",value="3001 Broadway Street NE Suite 100, Minneapolis, MN 55413")
+  })
+  
+  output$action_button<-renderUI({
+    actionButton("goButton", "Retrieve Address & Map Zoom")
+  })
+  
+  geo_loc<- reactive({
+    
+    input$goButton
+    loc<-isolate(geocode(input$Address, output="all"))
+    
+  })
+
+  
+  
+  
+  
+  
+  
+  
+  census_dat<-reactive({
+  browser()
+  input$goButton
+  geo_loc<-geo_loc()
+  tmp<-acs.fetch(geo=geo.make(state="MN",county="Hennepin", tract="*"), table.number="B04001")
+  
+  })
+  
+
+
+  
+  output$SIRE_map<-renderPlot({
+
+
+    
+    input$goButton
+    
+    
+    geo_loc<-geo_loc()
+    #census_dat<-census_dat()
+    
+    pt<-data.frame(lon=geo_loc$results[[1]]$geometry$location$lng,lat=geo_loc$results[[1]]$geometry$location$lat)
+    
+    z=isolate(input$zoom_res)
+    l=isolate(input$Address)
+    map<-do.call("qmap",list(location=l,zoom=z))
+    map<-map+geom_point(aes(x=lon,y=lat),size=8,colour="Blue",data=pt)
+    print(map)
+    
+    
+  })
+  
+  
+  
+  
+  
 
 
   
 })
+

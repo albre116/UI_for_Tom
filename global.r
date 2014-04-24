@@ -149,6 +149,15 @@ haplotypePairImpute<-function(mug=mug_ini,populations=populations_ini){
   
 }
 
+Census_block<-function(latitude=28.35975,longitude=-81.421988){
+  host <- 'http://data.fcc.gov/api/block/find?format=json'
+  url <- paste(host, paste("latitude=", latitude, sep=""), paste("longitude=", longitude, sep=""), "showall=true", sep="&")
+  jsonResponse <- getURL(url)
+  resultdf <- fromJSON(jsonResponse)
+  return(resultdf)
+}
+
+
 
 
 #' @import shiny
@@ -305,3 +314,12 @@ registerInputHandler("shinyjsexamples.chooser", function(data, ...) {
   else
     list(left=as.character(data$left), right=as.character(data$right))
 }, force = TRUE)
+
+
+
+
+
+
+
+
+
