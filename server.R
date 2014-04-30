@@ -7,25 +7,98 @@ library(plyr)
 library(ggplot2)
 library(shinyIncubator)
 library(ggmap)
+library(mapproj)
 library(acs)
-api.key.install(key="a4967dc495fd5b445d602daf6e9626c4bcf2c050") ###key for acs pakages to access census API
+library(gridExtra)
+library(MASS)
+library(reshape2)
+api.key.install(key="b00c79d5be769cd3ed18d5666851b532ff290694") ###key for acs pakages to access census API
 
+#init<-haplotypePairImpute()###call the function to get the HLA codes
+s1 <- list(locus="A", type1="31:01", type2="66:01")
+s2 <- list(locus="BPR", type1="40:02", type2="41:02")
+s3 <- list(locus="C", type1="03:04", type2="17:03")
+s4 <- list(locus="DRB1", type1="07:01", type2="04:04")
+s5 <- list(locus="DQB1", type1="03:02", type2="02:01")
+s6 <- list(locus="DRB3", type1="", type2="")
+s7 <- list(locus="DRB4", type1="", type2="")
+s8 <- list(locus="DRB5", type1="", type2="")
+state_mug <- rbind(data.frame(s1), data.frame(s2), data.frame(s3), 
+                   data.frame(s4), data.frame(s5), data.frame(s6), 
+                   data.frame(s7), data.frame(s8))
+chos_ini<- c("AAFA","AFB", "AINDI", "AMIND", "CARB", "CARHIS", "CARIBI", "FILII", "HAWI",
+                     "JAPI", "KORI", "MENAFC", "MSWHIS", "NAMER", "NCHI", "SCAHIS", "SCSEAI", "VIET",
+                     "CAU","HIS","NAM","AFA","API")
 
-###initialize values in array
-init<-haplotypePairImpute()###call the function to get the HLA codes
-state_mug<-rbind(data.frame(init$mug[1]),
-                 data.frame(init$mug[2]),
-                 data.frame(init$mug[3]),
-                 data.frame(init$mug[4]),
-                 data.frame(init$mug[5]))
-state_pop<-data.frame(init$populations)
-chos_ini<-as.character(state_pop[[1]])
 
 shinyServer(function(input, output, session){ # pass in a session argument
+
+
+  
+  HLA<-reactive({
+    input$lookup
+    if(is.na(isolate(input$ID))){
+      out=state_mug
+      HLA=NULL
+      
+    }
+    else{
+      
+      HLA=switch(isolate(input$type),
+    
+  
+           DID={DID_HLA_Lookup(isolate(input$ID))},
+  
+           CID={CID_HLA_Lookup(isolate(input$ID))},
+  
+           RID={RID_HLA_Lookup(isolate(input$ID))},
+  
+  
+    )
+    
+    out<-data.frame()
+    for (i in 1:length(HLA$mug)){
+      out<-rbind(out,data.frame(HLA$mug[i]))
+    }
+    }
+
+  list(HLA=out,fullresult=HLA)
+  
+  })
+    
+  
   
   output$mlt_chooser<-renderUI({
+    input$lookup
+    
+    idx<-chos_ini %in% c("AFA","CAU","API","HIS","NAM")
+    
+    if(!is.na(isolate(input$ID))){
+      SIRE=switch(isolate(input$type),
+                 DID={DID_SIRE_Lookup(isolate(input$ID))},
+                 
+                 CID={CID_SIRE_Lookup(isolate(input$ID))},
+                 
+                 RID={RID_SIRE_Lookup(isolate(input$ID))},
+      )
+      
+      tmp<-data.frame(race=SIRE$races,ethnicity=SIRE$ethnicity)
+      
+      choices<-data.frame()
+      for (i in 1:nrow(tmp)){
+        
+      mapped<-SIRE_map(tmp$race[i],tmp$ethnicity[i])
+      choices<-rbind(choices,mapped)
+
+      
+      }
+      idx<-chos_ini %in% choices$population
+      
+    }
+
+  
     chooserInput("mlt_race_pairs", "Available", "Selected",
-                 chos_ini[-c(2,14)],chos_ini[c(2,14)], size = 10, multiple = TRUE
+                 chos_ini[!idx],chos_ini[idx], size = 10, multiple = TRUE
     )
     
   })
@@ -38,7 +111,7 @@ shinyServer(function(input, output, session){ # pass in a session argument
   })
   
   output$table_mug<-renderUI({
-    matrixCustom('mug', 'MUG Typing', state_mug)
+    matrixCustom('mug', 'MUG Typing', HLA()[["HLA"]])
     })
   
   output$num_show<-renderUI({
@@ -63,7 +136,8 @@ shinyServer(function(input, output, session){ # pass in a session argument
     HLA<-list()
     for (i in 1:nrow(tmp)){
       s <- list(locus=tmp[i,1], type1=tmp[i,2], type2=tmp[i,3])
-      HLA[[i]]<-s
+      if (s$type1 != "" | s$type2 != ""){
+      HLA[[i]]<-s}
     }
 
     if(input$single_race != c("")){
@@ -74,10 +148,7 @@ shinyServer(function(input, output, session){ # pass in a session argument
     
   })
   
-  
-  
-  
-  
+
   
   haplotypesData <- reactive({
     input$update_mug
@@ -85,28 +156,15 @@ shinyServer(function(input, output, session){ # pass in a session argument
     HLA<-list()
     for (i in 1:nrow(tmp)){
       s <- list(locus=tmp[i,1], type1=tmp[i,2], type2=tmp[i,3])
-      HLA[[i]]<-s
+      if (s$type1 != "" | s$type2 != ""){
+        HLA[[i]]<-s}
     }
-    init$populations<-input$mlt_race_pairs$right
-    haplotypePairs<-haplotypePairImpute(HLA,init$populations)
+    if(length(input$mlt_race_pairs$right)<=1){return(NULL)}else{
+    haplotypePairs<-haplotypePairImpute(HLA,input$mlt_race_pairs$right)}
     class(haplotypePairs$haplotype_pairs[[3]])<-"numeric"
     class(haplotypePairs$haplotype_pairs[[6]])<-"numeric"
     class(haplotypePairs$haplotype_pairs[[7]])<-"numeric"
-    
-
         
-    
-    ####left off here... need to figure out the 2X rule (urn sampling model)
-    ###so in constructing a contingency table and looking at what is margined out
-    ###pradeep doesn't double list [H1=a,H2=b|R1=CAU,R2=AFA] for the mirror [H1=b,H2=a|R1=AFA,R2=CAU] so any
-    ###mlt need a 2x multiplier whether heterzygote or homozygote
-    ###but the compliment of the above [H1=b,H2=a|R1=CAU,R2=AFA] the mirror [H1=a,H2=b|R1=AFA,R2=CAU]
-    ###makes the list, so basically the rule will be if non-mlt multiply likelihood by 2X to deal with [b,a] and [a,b]
-    ###this is already implicitly taken into account (2 copies will be present) in a multi, so just multipley the likelihood
-    ###by 2X for any multi to deal with the magining of the race phasing, not the haploypes because 2 copies are present
-    ###(i.e. you do not multiply by 4X like you might think)
-
-    
     ####Compute likelihood of HLA given Race1 & Race2
     pairs<-haplotypePairs$haplotype_pairs
     index<-paste(pairs$Race1,pairs$Race2,sep="-")
@@ -236,13 +294,26 @@ shinyServer(function(input, output, session){ # pass in a session argument
   })
   
   output$haplotypePairs <- renderDataTable({
-  haplotypesData()$haplotypePairs$haplotype_pairs
+    if (is.null(haplotypesData())){
+     data.frame("You Must Pick At Least 2 Race Groups"="You Must Pick At Least 2 Race Groups") 
+      
+    }else{haplotypesData()$haplotypePairs$haplotype_pairs}
   })
   
+  
+
   
   output$haplotypes <- renderDataTable({
     haplotypeSingle()$haplotypes
   })
+  
+  
+  
+  
+  
+  #############################
+  #######Mapping Commands######
+  #############################
   
   
   output$address_input<-renderUI({
@@ -253,58 +324,186 @@ shinyServer(function(input, output, session){ # pass in a session argument
     actionButton("goButton", "Retrieve Address & Map Zoom")
   })
   
+      
   geo_loc<- reactive({
-    
-    input$goButton
+    input$goButton #sit till called
     loc<-isolate(geocode(input$Address, output="all"))
     
   })
 
   
+
   
+
+
   
-  
+  p<-reactive({
+    input$goButton###make this sit till clicked
+    geo_loc<-geo_loc()
+    pt<-data.frame(x=geo_loc$results[[1]]$geometry$location$lng,y=geo_loc$results[[1]]$geometry$location$lat)
+    z=isolate(input$zoom_res)
+    q<-do.call("get_googlemap",list(center=as.numeric(pt),zoom=z,markers=pt))
+    p<-ggmap(q)
+    return(list(p=p,q=q))
+  })
   
   
   
   census_dat<-reactive({
-  browser()
-  input$goButton
-  geo_loc<-geo_loc()
-  tmp<-acs.fetch(geo=geo.make(state="MN",county="Hennepin", tract="*"), table.number="B04001")
-  
-  })
-  
-
-
-  
-  output$SIRE_map<-renderPlot({
-
-
+    input$goButton ###sit till called
+    ####get data from the map fit
+    p<-p()[["p"]]
+    x_max=max(p$data$lon)
+    x_min=min(p$data$lon)
+    y_max=max(p$data$lat)
+    y_min=min(p$dat$lat)
     
-    input$goButton
+    ####create search grid for density smoothing
+    seg<-isolate(input$grid)
+    delta_x=(x_max-x_min)/(seg-1)
+    delta_y=(y_max-y_min)/(seg-1)
     
-    
+    grid<-data.frame()
+    for(i in 1:seg){
+      for(j in 1:seg){
+        grid<-rbind(grid,data.frame(x=x_min+delta_x*(i-1),y=y_min+delta_y*(j-1)))
+      }
+    }
+    ###look up block group details form census API
     geo_loc<-geo_loc()
-    #census_dat<-census_dat()
+    lon=geo_loc$results[[1]]$geometry$location$lng
+    lat=geo_loc$results[[1]]$geometry$location$lat
+    block_grp<-Census_block(lat,lon)
+    FIPS=block_grp$Block$FIPS    
+    result<-data.frame(Census_pull_tract_acs(FIPS)[2])
+    Individual<-data.frame(lat=lat,lon=lon,result)
     
-    pt<-data.frame(lon=geo_loc$results[[1]]$geometry$location$lng,lat=geo_loc$results[[1]]$geometry$location$lat)
+
+    ###extract details for neighbors on grid###
+    FIPS=character()
+    for (i in 1:nrow(grid)){
+      block_grp<-Census_block(grid$y[i],grid$x[i])
+      FIPS=c(FIPS,block_grp$Block$FIPS)
+    }
     
-    z=isolate(input$zoom_res)
-    l=isolate(input$Address)
-    map<-do.call("qmap",list(location=l,zoom=z))
-    map<-map+geom_point(aes(x=lon,y=lat),size=8,colour="Blue",data=pt)
-    print(map)
+    result<-data.frame()
+    for (i in 1:length(FIPS)){
+    result<-rbind(result,data.frame(Census_pull_tract_acs(FIPS[i])[2]))
+    }
     
+    Neighbors<-data.frame(lat=grid$y,lon=grid$x,result)
+    list(Individual=Individual,Neighbors=Neighbors,delta_x=delta_x,delta_y=delta_y)
+        
+
+  })
+  
+  
+  output$census<-renderDataTable({
+
+    c_i<-census_dat()[["Individual"]]
+    c_n<-census_dat()[["Neighbors"]]
     
+    rbind(data.frame("Source"="Target Individual",c_i),
+          data.frame("Source"="Neighbor",c_n))
   })
   
   
   
   
   
+  plot_dat<-reactive({
+    p<-p()[["p"]]
+    delta_x<-census_dat()[["delta_x"]]
+    delta_y<-census_dat()[["delta_y"]]
+    census<-census_dat()[["Neighbors"]]
+    individual<-census_dat()[["Individual"]]
+    
+    ####convert to percentages????
+    sel<-c(3:7)
+    tmp<-stack(census,select=sel)
+    data<-data.frame()
+    for (i in 1:length(sel)){
+    data<-rbind(data,census[,c(1,2)])
+    }
+    
+    data<-cbind(data,tmp)
+    #####draw a random sample for plotting purposes using a multinomial distribution and jittering
+    nsample=10000
+    rs<-sample(1:nrow(data),nsample,replace=T,prob=(data$values/sum(data$values)))
+    data_s<-data[rs,]
+    jitter_x<-runif(nsample,min=-delta_x/2,max=delta_x/2)
+    jitter_y<-runif(nsample,min=-delta_y/2,max=delta_y/2)
+    data_s$lat<-data_s$lat+jitter_y
+    data_s$lon<-data_s$lon+jitter_x
+    
+    
+    #####compute 2d density estimates by race#####
+    
+    output<-data.frame()
+    for (i in unique(data_s$ind)){
+      dat<-data_s[data_s$ind %in% i,]
+      dens<-kde2d(dat$lon,dat$lat,n=50)
+      tmp<-data.frame(expand.grid(lon = dens$x, lat = dens$y),
+                      z = as.vector(dens$z*(nrow(dat)/nrow(data_s))),ind=i)
+      output<-rbind(output,tmp)
+          
+    }
 
+    ###normalize density to a direct probability measure
+    idx<-rep(1:nrow(tmp),length(unique(data_s$ind)))
+    for(i in 1:nrow(tmp)){
+      tt<-output$z[idx==i]
+      tt<-tt/sum(tt)
+      output$z[idx==i]<-tt
+            
+    }
+    
+    
 
+    
+    
+    
+    list(data_s=data_s,output=output)
+    
+    })
+    
+    output$SIRE_map_raw<-renderPlot({
+      p<-p()[["p"]]
+      output<-plot_dat()[["output"]]
+
+    
+    point=input$contour###set to plot type
+    if (point==TRUE){
+    Density_Map<-p+
+      geom_point(aes(x=lon,y=lat,alpha=z,size=z,colour=z),data=output)+
+      facet_grid(.~ ind)} else{
+    
+     Density_Map<-p+
+     stat_contour(aes(x=lon,y=lat,z=z,colour = ..level..),data=output)+
+      scale_colour_gradient(low = "black", high = "blue")+
+       facet_grid(.~ ind)}
+
+     
+    print(Density_Map)
+        
+  })
   
+  output$SIRE_map_contour<-renderPlot({
+    p<-p()[["p"]]
+    data_s<-plot_dat()[["data_s"]]
+    
+
+    
+    dens_layer<-stat_density2d(geom="point",aes(x=lon,y=lat,size=..density..,alpha=..density..,colour=..density..),contour=FALSE,data=data_s)
+    
+    Density_Map<-p+
+      dens_layer+
+      facet_grid(.~ ind)
+      
+    print(Density_Map)
+    
+  })
+  
+    
 })
 

@@ -8,6 +8,18 @@ library('RCurl')
 # install.packages('rjson')
 library('rjson')
 
+
+library(shiny)
+library(plyr)
+library(ggplot2)
+library(shinyIncubator)
+library(ggmap)
+library(mapproj)
+library(acs)
+library(gridExtra)
+library(MASS)
+library(reshape2)
+
 s1 <- list(locus="A", type1="31:01", type2="66:01")
 s2 <- list(locus="BPR", type1="40:02", type2="41:02")
 s3 <- list(locus="C", type1="03:04", type2="17:03")
@@ -156,6 +168,268 @@ Census_block<-function(latitude=28.35975,longitude=-81.421988){
   resultdf <- fromJSON(jsonResponse)
   return(resultdf)
 }
+
+
+
+
+Census_meta_data<-function(){
+  host <- 'http://api.census.gov/data.json'
+  url <- paste(host)
+  jsonResponse <- getURL(url)
+  resultdf <- fromJSON(jsonResponse)
+  return(resultdf)
+}
+
+
+Census_pull_tract_acs<-function(FIPS="270531069001009",get=c("DP05_0032E","DP05_0072E","DP05_0052E",
+                                                             "DP05_0077E","DP05_0073E","DP05_0074E",
+                                                             "DP05_0075E","DP05_0076E")){
+  STATE=paste0("state:",substr(FIPS,1,2))
+  COUNTY=paste0("county:",substr(FIPS,3,5))
+  TRACT=paste0("tract:",substr(FIPS,6,11))
+  BLOCK=paste0("block+group:",substr(FIPS,12,12))
+  key='key=b00c79d5be769cd3ed18d5666851b532ff290694'
+  target=paste0("for=",TRACT)
+  locale=paste0("in=",STATE,"+",COUNTY)
+  ####format#####
+  #http://api.census.gov/data/2011/acs5?get=[the data code that you found above]&for=
+    #tract:[tract code or *]&in=state:[state code]+county:[county code]&key=[your key]
+  
+  url<-paste0('http://api.census.gov/data/2012/acs5/profile?get=',paste(get,collapse=","))
+  url<-paste(url,target,locale,key,sep="&")
+
+  jsonResponse <- getURL(url)
+  #print(jsonResponse)
+  resultdf <- fromJSON(jsonResponse)
+  #print(resultdf)
+  tmp<-data.frame(resultdf[[2]])
+  rownames(tmp)<-resultdf[[1]]
+  colnames(tmp)<-"Census Tract Counts"
+  tmp<-data.frame(t(tmp))
+  tmp[,1:8]<-as.numeric(tmp[,1:8])
+  HIS<-tmp$DP05_0032E-tmp$DP05_0072E+tmp$DP05_0052E-tmp$DP05_0077E
+  CAU<-tmp$DP05_0072E
+  AFA<-tmp$DP05_0073E
+  NAM<-tmp$DP05_0074E
+  API<-tmp$DP05_0075E+tmp$DP05_0076E
+  TOTAL<-HIS+CAU+AFA+NAM+API
+  RACE<-data.frame(HIS,CAU,AFA,NAM,API,TOTAL)
+  
+  list(QUERY=resultdf,RACE=RACE)
+  
+
+}
+
+
+DID_HLA_Lookup<-function(did=95963823){
+
+host <- 'http://b1haplogic-s1:8080'
+httpHeaders <- c(Accept = "application/json",
+                 'Content-Type' = 'application/json;charset=UTF-8')
+
+# URL for retrieving haplotype pairs
+url = paste(host, '/hla/did/', did, sep='')
+
+# Get Phenotype+HLA from the server
+resultJSON <- getURL(url, httpheader= httpHeaders)
+
+if(length(resultJSON) > 0) {
+  result <- fromJSON(resultJSON)
+  print(paste("Typings for", result$nmdpId))
+  print(paste("Population:", result$population))
+  searchTypings <- result$searchTypings
+  mug <- list()
+  for(i in 1:length(searchTypings)) {
+    locus <- searchTypings[[i]]$hlaLocus
+    type1 <- searchTypings[[i]]$antigen1
+    if(type1 == "null") {
+      type1 <- ""
+    }
+    type2 <- searchTypings[[i]]$antigen2
+    if(type2 == "null") {
+      type2 <- ""
+    }
+    s <- list(locus=locus, type1=type1, type2=type2)
+    mug[[i]] <- s
+    print(paste(locus, type1, type2, sep=","))
+  }
+}
+
+return(list(result=result,mug=mug))
+
+}
+
+
+CID_HLA_Lookup<-function(cid=996913803){
+host <- 'http://b1haplogic-s1:8080'
+httpHeaders <- c(Accept = "application/json",
+                 'Content-Type' = 'application/json;charset=UTF-8')
+
+# URL for retrieving haplotype pairs
+url = paste(host, '/hla/cid/', cid, sep='')
+
+# Get Phenotype+HLA from the server
+resultJSON <- getURL(url, httpheader= httpHeaders)
+
+if(length(resultJSON) > 0) {
+  result <- fromJSON(resultJSON)
+  print(paste("Typings for", result$nmdpId))
+  print(paste("Population:", result$population))
+  searchTypings <- result$searchTypings
+  mug <- list()
+  for(i in 1:length(searchTypings)) {
+    locus <- searchTypings[[i]]$hlaLocus
+    type1 <- searchTypings[[i]]$antigen1
+    if(type1 == "null") {
+      type1 <- ""
+    }
+    type2 <- searchTypings[[i]]$antigen2
+    if(type2 == "null") {
+      type2 <- ""
+    }
+    s <- list(locus=locus, type1=type1, type2=type2)
+    mug[[i]] <- s
+    print(paste(locus, type1, type2, sep=","))
+  }
+}
+
+return(list(result=result,mug=mug))
+
+}
+
+
+
+RID_HLA_Lookup<-function(rid=1419426){
+host <- 'http://b1haplogic-s1:8080'
+httpHeaders <- c(Accept = "application/json",
+                 'Content-Type' = 'application/json;charset=UTF-8')
+
+# URL for retrieving haplotype pairs
+url = paste(host, '/hla/rid/', rid, sep='')
+
+# Get Phenotype+HLA from the server
+resultJSON <- getURL(url, httpheader= httpHeaders)
+
+if(length(resultJSON) > 0) {
+  result <- fromJSON(resultJSON)
+  print(paste("Typings for", result$nmdpId))
+  print(paste("Population:", result$population))
+  searchTypings <- result$searchTypings
+  mug <- list()
+  for(i in 1:length(searchTypings)) {
+    locus <- searchTypings[[i]]$hlaLocus
+    type1 <- searchTypings[[i]]$antigen1
+    if(type1 == "null") {
+      type1 <- ""
+    }
+    type2 <- searchTypings[[i]]$antigen2
+    if(type2 == "null") {
+      type2 <- ""
+    }
+    s <- list(locus=locus, type1=type1, type2=type2)
+    mug[[i]] <- s
+    print(paste(locus, type1, type2, sep=","))
+  }
+}
+
+return(list(result=result,mug=mug))
+
+}
+
+
+
+
+DID_SIRE_Lookup<-function(DID=095963823){
+
+host <- 'http://b1haplogic-s1:8080'
+httpHeaders <- c(Accept = "application/json",
+                 'Content-Type' = 'application/json;charset=UTF-8')
+
+# build the complete URL
+url = paste(host, '/sire/did/', DID, sep='')
+
+# Get SIRE from the server
+resultJSON <- getURL(url, httpheader= httpHeaders)
+
+if(length(resultJSON) > 0) {
+  result <- fromJSON(resultJSON)
+  return(result)
+  #print(paste("SIRE for:", result$nmdpId))
+}
+
+
+}
+
+
+RID_SIRE_Lookup<-function(RID=095963823){
+  
+  
+  host <- 'http://b1haplogic-s1:8080'
+  httpHeaders <- c(Accept = "application/json",
+                   'Content-Type' = 'application/json;charset=UTF-8')
+  
+  # build the complete URL
+  url = paste(host, '/sire/rid/', RID, sep='')
+  
+  # Get SIRE from the server
+  resultJSON <- getURL(url, httpheader= httpHeaders)
+  
+  if(length(resultJSON) > 0) {
+    result <- fromJSON(resultJSON)
+  return(result)
+  }
+  
+  
+}
+
+
+CID_SIRE_Lookup<-function(CID=095963823){
+  
+  host <- 'http://b1haplogic-s1:8080'
+  httpHeaders <- c(Accept = "application/json",
+                   'Content-Type' = 'application/json;charset=UTF-8')
+  
+  # build the complete URL
+  url = paste(host, '/sire/cid/', CID, sep='')
+  
+  # Get SIRE from the server
+  resultJSON <- getURL(url, httpheader= httpHeaders)
+  
+  if(length(resultJSON) > 0) {
+    result <- fromJSON(resultJSON)
+    return(result)
+  }
+  
+  
+}
+
+
+
+SIRE_map<-function(detailRace = "WEURO",
+                   ethnicity = "NHIS"){
+
+host <- 'http://b1haplogic-s1:8080'
+httpHeaders <- c('Accept' = "application/json",
+                 'Content-Type' = 'application/json;charset=UTF-8')
+
+
+url <- paste(host, '/population/search?detailRace=', detailRace, '&ethnicity=', ethnicity, sep='')
+
+# Get Phenotype+HLA from the server
+resultJSON <- getURL(url, httpheader= httpHeaders)
+if(nchar(resultJSON) > 0) {
+  result <- fromJSON(resultJSON)
+  return(result)
+}
+
+
+}
+
+
+
+
+
+
 
 
 
