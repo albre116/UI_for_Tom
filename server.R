@@ -12,7 +12,7 @@ library(acs)
 library(gridExtra)
 library(MASS)
 library(reshape2)
-api.key.install(key="b00c79d5be769cd3ed18d5666851b532ff290694") ###key for acs pakages to access census API
+
 
 #init<-haplotypePairImpute()###call the function to get the HLA codes
 s1 <- list(locus="A", type1="31:01", type2="66:01")
@@ -30,30 +30,24 @@ chos_ini<- c("AAFA","AFB", "AINDI", "AMIND", "CARB", "CARHIS", "CARIBI", "FILII"
                      "JAPI", "KORI", "MENAFC", "MSWHIS", "NAMER", "NCHI", "SCAHIS", "SCSEAI", "VIET",
                      "CAU","HIS","NAM","AFA","API")
 
+map<-c("AFA","AFA","API","NAM","AFA","HIS","NAM","API","API","API","API","CAU","HIS",
+       "CAU","API","HIS","API","API","CAU","HIS","NAM","AFA","API")
+
+FLAG<<-FALSE###Needed for state changes
 
 shinyServer(function(input, output, session){ # pass in a session argument
 
-
-  
   HLA<-reactive({
     input$lookup
     if(is.na(isolate(input$ID))){
       out=state_mug
       HLA=NULL
-      
     }
     else{
-      
       HLA=switch(isolate(input$type),
-    
-  
            DID={DID_HLA_Lookup(isolate(input$ID))},
-  
            CID={CID_HLA_Lookup(isolate(input$ID))},
-  
            RID={RID_HLA_Lookup(isolate(input$ID))},
-  
-  
     )
     
     out<-data.frame()
@@ -65,42 +59,46 @@ shinyServer(function(input, output, session){ # pass in a session argument
   list(HLA=out,fullresult=HLA)
   
   })
+  
+  output$db_race<-renderTable({
+    input$lookup
+    if(!is.na(isolate(input$ID))){
+      SIRE=switch(isolate(input$type),
+                  DID={DID_SIRE_Lookup(isolate(input$ID))},
+                  CID={CID_SIRE_Lookup(isolate(input$ID))},
+                  RID={RID_SIRE_Lookup(isolate(input$ID))},
+      )
+      return(as.data.frame(SIRE))
+      }
+    return(NULL)
+    
+  })
     
   
   
   output$mlt_chooser<-renderUI({
     input$lookup
-    
     idx<-chos_ini %in% c("AFA","CAU","API","HIS","NAM")
-    
     if(!is.na(isolate(input$ID))){
       SIRE=switch(isolate(input$type),
                  DID={DID_SIRE_Lookup(isolate(input$ID))},
-                 
                  CID={CID_SIRE_Lookup(isolate(input$ID))},
-                 
                  RID={RID_SIRE_Lookup(isolate(input$ID))},
       )
       
+      if(is.null(SIRE$ethnicity)){idx<-rep(TRUE,length(chos_ini))} else{
       tmp<-data.frame(race=SIRE$races,ethnicity=SIRE$ethnicity)
-      
       choices<-data.frame()
       for (i in 1:nrow(tmp)){
-        
       mapped<-SIRE_map(tmp$race[i],tmp$ethnicity[i])
       choices<-rbind(choices,mapped)
-
-      
       }
       idx<-chos_ini %in% choices$population
-      
-    }
-
-  
+    }}
+    
     chooserInput("mlt_race_pairs", "Available", "Selected",
                  chos_ini[!idx],chos_ini[idx], size = 10, multiple = TRUE
     )
-    
   })
   
   
@@ -120,7 +118,18 @@ shinyServer(function(input, output, session){ # pass in a session argument
 
   
   output$naive_prior<-renderUI({
-    start<-data.frame(input$mlt_race_pairs$right,i_prior=1/length(input$mlt_race_pairs$right))
+    input$update_prior
+    if(input$census_prior){
+      labels<-input$mlt_race_pairs$right
+      i_prior<-c()
+      for (i in labels){
+        b<-map[chos_ini==i]
+        q<-isolate(knn_call()[["call"]])
+        val<-q$mean[grep(b,q$race)]
+        i_prior<-c(i_prior,val)}
+      start<-data.frame(labels,i_prior)
+    }else{
+    start<-data.frame(input$mlt_race_pairs$right,i_prior=1/length(input$mlt_race_pairs$right))}
     matrixCustom('naive_prior', 'Priors to Be Applied',start)
   })
   
@@ -132,6 +141,7 @@ shinyServer(function(input, output, session){ # pass in a session argument
 
   haplotypeSingle<-reactive({
     input$update_mug
+    input$lookup
     tmp<-isolate(data.frame(input$mug))
     HLA<-list()
     for (i in 1:nrow(tmp)){
@@ -150,9 +160,9 @@ shinyServer(function(input, output, session){ # pass in a session argument
   
 
   
-  haplotypesData <- reactive({
+  haplotypes_pre_Data<-reactive({
     input$update_mug
-    tmp<-isolate(data.frame(input$mug))
+    tmp<-data.frame(input$mug)
     HLA<-list()
     for (i in 1:nrow(tmp)){
       s <- list(locus=tmp[i,1], type1=tmp[i,2], type2=tmp[i,3])
@@ -164,7 +174,14 @@ shinyServer(function(input, output, session){ # pass in a session argument
     class(haplotypePairs$haplotype_pairs[[3]])<-"numeric"
     class(haplotypePairs$haplotype_pairs[[6]])<-"numeric"
     class(haplotypePairs$haplotype_pairs[[7]])<-"numeric"
-        
+    return(haplotypePairs)
+    })
+    
+
+
+
+  haplotypesData <- reactive({
+    haplotypePairs<-haplotypes_pre_Data()
     ####Compute likelihood of HLA given Race1 & Race2
     pairs<-haplotypePairs$haplotype_pairs
     index<-paste(pairs$Race1,pairs$Race2,sep="-")
@@ -185,15 +202,18 @@ shinyServer(function(input, output, session){ # pass in a session argument
         }
       }
     }
-
     
     ####Construct Naive Prior R1 independent of R2#####
-    if(!is.null(input$naive_prior)){
+    a=paste(input$naive_prior[,1],collapse="+")
+    b=paste(input$mlt_race_pairs$right,collapse="+")
+    check=(a==b)
+    
+    if(!is.null(input$naive_prior) & check){
       prior_naive<-data.frame("Race"=input$naive_prior[,1],"Prior"=input$naive_prior[,2])
-      class(prior_naive[[2]])<-"numeric"} else{
+      class(prior_naive[[2]])<-"numeric"}
+       else{
         prior_naive<-NULL
       }
-    
     prior<-lik
     colnames(prior)[2]<-"Prior"
     prior$Prior=0
@@ -203,11 +223,9 @@ shinyServer(function(input, output, session){ # pass in a session argument
       R1=strsplit(as.character(prior$Race[i]),"-")[[1]][1]
       R2=strsplit(as.character(prior$Race[i]),"-")[[1]][2]
       prior$Prior[i]=prior_naive$Prior[prior_naive$Race==R1]*prior_naive$Prior[prior_naive$Race==R2]
-        
     }
     ###normalize Prior
     prior$Prior<-prior$Prior/sum(prior$Prior)}
-    
     
     #####compute the Bayes call
     call<-lik
@@ -217,11 +235,9 @@ shinyServer(function(input, output, session){ # pass in a session argument
     if(!is.null(prior_naive)){
       for (i in 1:nrow(call)){
         call$Probability[i]=lik$likelihood[i]*prior$Prior[i]
-        
       }
     call$Probability<-call$Probability/(sum(call$Probability))
-      
-      
+          
     }
     
     
@@ -231,11 +247,8 @@ shinyServer(function(input, output, session){ # pass in a session argument
     lik$Race=factor(lik$Race,levels=call$Race[idx])###sort likelihood for display
     prior$Race=factor(prior$Race,levels=call$Race[idx])###sort prior for display
     call$Race=factor(call$Race,levels=call$Race[idx])###sort call for display
-    
-      
-      
-    
-      list(haplotypePairs=haplotypePairs,likelihood=lik,prior=prior,call=call,idx=idx)
+
+    return(list(haplotypePairs=haplotypePairs,likelihood=lik,prior=prior,call=call,idx=idx))
   })
   
   
@@ -294,10 +307,9 @@ shinyServer(function(input, output, session){ # pass in a session argument
   })
   
   output$haplotypePairs <- renderDataTable({
-    if (is.null(haplotypesData())){
+    if (is.null(haplotypes_pre_Data())){
      data.frame("You Must Pick At Least 2 Race Groups"="You Must Pick At Least 2 Race Groups") 
-      
-    }else{haplotypesData()$haplotypePairs$haplotype_pairs}
+    }else{data.frame(haplotypes_pre_Data()$haplotype_pairs)}
   })
   
   
@@ -398,11 +410,10 @@ shinyServer(function(input, output, session){ # pass in a session argument
   })
   
   
+  
   output$census<-renderDataTable({
-
     c_i<-census_dat()[["Individual"]]
     c_n<-census_dat()[["Neighbors"]]
-    
     rbind(data.frame("Source"="Target Individual",c_i),
           data.frame("Source"="Neighbor",c_n))
   })
@@ -417,9 +428,12 @@ shinyServer(function(input, output, session){ # pass in a session argument
     delta_y<-census_dat()[["delta_y"]]
     census<-census_dat()[["Neighbors"]]
     individual<-census_dat()[["Individual"]]
-    
-    ####convert to percentages????
-    sel<-c(3:7)
+    sel<-c()
+    for (i in 1:nrow(input$naive_prior)){
+      map_naive<-map[chos_ini==input$naive_prior[i,1]]
+      sel<-c(sel,grep(map_naive,colnames(census)))
+    }
+    sel<-unique(sel)
     tmp<-stack(census,select=sel)
     data<-data.frame()
     for (i in 1:length(sel)){
@@ -458,18 +472,60 @@ shinyServer(function(input, output, session){ # pass in a session argument
             
     }
     
-    
-
-    
-    
-    
-    list(data_s=data_s,output=output)
+    list(data_s=data_s,output=output,tmp=tmp)
     
     })
     
+  
+    knn_call<-reactive({###stopped here
+      input$update_knn
+      dat<-plot_dat()[["output"]]
+      individual<-census_dat()[["Individual"]]
+      data<-data.frame()
+      for (i in unique(dat$ind)){
+      tmp<-dat[dat$ind==i,]
+      dist<-spDistsN1(as.matrix(tmp[,c(1,2)]),as.matrix(individual[,c(2,1)]),longlat=TRUE)
+      idx<-order(dist)
+      k=isolate(input$k_neigh)###number of nearest neighbors to make race call on
+      keep<-1:length(idx) %in% idx[1:k]
+      data<-rbind(data,tmp[keep,])
+      }
+      
+      
+      call<-data.frame()
+      for (i in unique(data$ind)){
+        call=rbind(call,data.frame(race=i,mean=mean(data$z[data$ind==i])))
+                
+      }
+      call$mean<-call$mean/sum(call$mean)
+      idx<-1:length(call$mean)
+      idx<-idx[order(call$mean)]
+      call$race=factor(call$race,levels=call$race[idx])###sort likelihood for display
+      
+      return(list(call=call,data=data))
+      
+    })
+  
+  output$class_call<-renderPlot({
+      dat<-knn_call()[["call"]]
+      thePlot<-ggplot(dat,aes(x=mean,y=race))+geom_segment(aes(yend=race),xend=0)+
+        geom_point(size=3)+theme_bw()+xlab("Probability")+ggtitle("Prior Race Distribution Based on Census")+xlim(0,max(dat$mean))
+      theme(panel.grid.major.x=element_blank(),
+            panel.grid.minor.x=element_blank(),
+            axis.title.y=element_blank(),
+            panel.grid.major.y=element_line(colour="grey60",linetype="dashed"))
+      print(thePlot)
+      
+    })
+    
+
+  
+  
     output$SIRE_map_raw<-renderPlot({
+
       p<-p()[["p"]]
       output<-plot_dat()[["output"]]
+      support<-knn_call()[["data"]]
 
     
     point=input$contour###set to plot type
@@ -482,6 +538,10 @@ shinyServer(function(input, output, session){ # pass in a session argument
      stat_contour(aes(x=lon,y=lat,z=z,colour = ..level..),data=output)+
       scale_colour_gradient(low = "black", high = "blue")+
        facet_grid(.~ ind)}
+    
+    if (input$show_support==TRUE){
+      Density_Map<-Density_Map+geom_point(aes(x=lon,y=lat),data=support)
+    }
 
      
     print(Density_Map)
@@ -491,9 +551,7 @@ shinyServer(function(input, output, session){ # pass in a session argument
   output$SIRE_map_contour<-renderPlot({
     p<-p()[["p"]]
     data_s<-plot_dat()[["data_s"]]
-    
 
-    
     dens_layer<-stat_density2d(geom="point",aes(x=lon,y=lat,size=..density..,alpha=..density..,colour=..density..),contour=FALSE,data=data_s)
     
     Density_Map<-p+

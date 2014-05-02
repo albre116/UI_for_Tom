@@ -1,24 +1,56 @@
-# 'RCurl' package is used for accessing the webservice.
-# Install RCurl package as:
-# install.packages('RCurl')
-library('RCurl')
+if(!require("devtools"))
+  (install.packages("devtools"))
+if(!require("RCurl"))
+  (install.packages("RCurl"))
+if(!require("rjson"))
+  (install.packages("rjson"))
+if(!require("shiny"))
+  (install.packages("shiny"))
+if(!require("plyr"))
+  (install.packages("plyr"))
+if(!require("ggplot2"))
+  (install.packages("ggplot2"))
+if(!require("shinyIncubator"))
+  devtools::install_github("shiny-incubator", "rstudio")
+if(!require("ggmap"))
+  (install.packages("ggmap"))
+if(!require("mapproj"))
+  (install.packages("mapproj"))
+if(!require("acs"))
+  (install.packages("acs"))
+if(!require("gridExtra"))
+  (install.packages("gridExtra"))
+if(!require("MASS"))
+  (install.packages("MASS"))
+if(!require("reshape2"))
+  (install.packages("reshape2"))
+if(!require("spdep"))
+  (install.packages("spdep"))
+if(!require("class"))
+  (install.packages("class"))
 
-# 'rsjon' package is used for converting between R and JSON structures. 
-# Install rjson package as:
-# install.packages('rjson')
-library('rjson')
+# dids <- c(
+#   52092152,
+#   60837259,
+#   60837259,
+#   63896732,
+#   64421993,
+#   65991523,
+#   66678640,
+#   66678640,
+#   75239111,
+#   81842486,
+#   82655309,
+#   85023075,
+#   86661337,
+#   86661337,
+#   87196465,
+#   87196465,
+#   88623855,
+#   93880813,
+#   96294244,
+#   97346993)
 
-
-library(shiny)
-library(plyr)
-library(ggplot2)
-library(shinyIncubator)
-library(ggmap)
-library(mapproj)
-library(acs)
-library(gridExtra)
-library(MASS)
-library(reshape2)
 
 s1 <- list(locus="A", type1="31:01", type2="66:01")
 s2 <- list(locus="BPR", type1="40:02", type2="41:02")
