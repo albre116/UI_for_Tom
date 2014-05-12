@@ -2,8 +2,7 @@
 ### Bayes Classifier - ui.R ###
 ###############################
 
-library(shiny) 
-library(shinyIncubator)
+
 
 
 
@@ -33,26 +32,26 @@ shinyUI(fluidPage(
                      checkboxInput("census_prior","Use Census Prior?",value=FALSE),
                      numericInput("k_neigh","How many Nearest Neighbors?",10),
                      checkboxInput("show_support","Show K-Nearest Neighbors",value=FALSE),
-                     actionButton("update_knn", "Update K-Nearest Neighbors")
+                     actionButton("update_knn", "Update K-Nearest Neighbors"),
+                     numericInput("dir_prior","What Pseudo Counts for Centered Dirichlet Prior?",10),
+                     actionButton("update_dir", "Update Prior")
                      )
     
   ),column(9,navbarPage(title="",id="navbar1",
                          tabPanel("PairWise Haplotypes",dataTableOutput("haplotypePairs"),value="pairs"),
                          tabPanel("Individual Haplotypes",dataTableOutput("haplotypes"),value="individual"),
                          tabPanel("Likelihood of Data",
-                                  fluidPage(fluidRow(column(4,plotOutput("prior_plot")),
-                                                     column(4,plotOutput("lik_plot")),
-                                            column(4,plotOutput("call_plot"))),
+                                  fluidPage(fluidRow(column(12,showOutput("prior_plot", "highcharts"))),
                                             fluidRow(dataTableOutput("call_table"))),value="likelihood"),
                         tabPanel("SIRE Mapping",fluidPage(
-                                 fluidRow(plotOutput("class_call")),
+                                 fluidRow(showOutput("class_call", "highcharts")),
                                  fluidRow(h4("Probability of Race Designation given location [R|X,Y]"),plotOutput("SIRE_map_raw")),
                                  h4("Density Distribution of Individuals for a Given Race [X,Y|R]"),fluidRow(plotOutput("SIRE_map_contour")),
                                  fluidRow(dataTableOutput("census"))
                                  ), conditionalPanel("updateBusy() || $('html').hasClass('shiny-busy')",
                                                      id='progressIndicator',
                                                      "HI I'M IN PROGRESS",
-                                                     div(id='progress',includeHTML("C:/svn/malbrech/Shiny_Bayes_Classifier_svn/www/timer.js")
+                                                     div(id='progress',includeHTML("www/timer.js")
                                  ),
                                  tags$head(tags$style(type="text/css",
                                                       '#progressIndicator {',

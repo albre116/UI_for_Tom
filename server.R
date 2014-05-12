@@ -2,16 +2,16 @@
 #### Bayes Classifier - server.R ###
 #### Mark Albrecht               ###
 ####################################
-library(shiny)
-library(plyr)
-library(ggplot2)
-library(shinyIncubator)
-library(ggmap)
-library(mapproj)
-library(acs)
-library(gridExtra)
-library(MASS)
-library(reshape2)
+#library(shiny)
+#library(plyr)
+#library(ggplot2)
+#library(shinyIncubator)
+#library(ggmap)
+#library(mapproj)
+#library(acs)
+#library(gridExtra)
+#library(MASS)
+#library(reshape2)
 
 
 #init<-haplotypePairImpute()###call the function to get the HLA codes
@@ -113,11 +113,11 @@ shinyServer(function(input, output, session){ # pass in a session argument
     })
   
   output$num_show<-renderUI({
-    numericInput('cut', 'Number of Classes To Cut Display At', 20)
+    numericInput('cut', 'Number of Classes To Cut Display At', 10)
   })
 
   
-  output$naive_prior<-renderUI({
+  output$naive_prior<-renderUI({####updates prior based upon census pull
     input$update_prior
     if(input$census_prior){
       labels<-input$mlt_race_pairs$right
@@ -171,6 +171,7 @@ shinyServer(function(input, output, session){ # pass in a session argument
     }
     if(length(input$mlt_race_pairs$right)<=1){return(NULL)}else{
     haplotypePairs<-haplotypePairImpute(HLA,input$mlt_race_pairs$right)}
+    if(is.null(haplotypePairs)){return(NULL)}
     class(haplotypePairs$haplotype_pairs[[3]])<-"numeric"
     class(haplotypePairs$haplotype_pairs[[6]])<-"numeric"
     class(haplotypePairs$haplotype_pairs[[7]])<-"numeric"
@@ -251,52 +252,33 @@ shinyServer(function(input, output, session){ # pass in a session argument
     return(list(haplotypePairs=haplotypePairs,likelihood=lik,prior=prior,call=call,idx=idx))
   })
   
-  
 
-  output$lik_plot<-renderPlot({
-    dat<-haplotypesData ()[['likelihood']]
+  
+  output$prior_plot<-renderChart({
+    dat_l<-haplotypesData ()[['likelihood']]
+    dat_l$likelihood<-round(dat_l$likelihood/sum(dat_l$likelihood),2)
+    dat_p<-haplotypesData ()[['prior']]
+    dat_p$Prior<-round(dat_p$Prior/sum(dat_p$Prior),2)
+    dat_c<-haplotypesData ()[['call']]
+    dat_c$Probability<-round(dat_c$Probability,2)
     idx<-haplotypesData ()[['idx']]
     idx<-abs(order(idx)-(length(idx)+1))###generate ranking 1 to N
+    dat<-data.frame(Race=dat_p$Race,Prior=dat_p$Prior,Likelihood=dat_l$likelihood,Call_Probability=dat_c$Probability)
+    dat<-dat[order(idx),]
+    idx<-idx[order(idx)]
+    idx<-order(idx,decreasing=T)##flip IDX
+    levels(dat$Race)<-levels(dat$Race)[nrow(dat):1]###flip levels
+    dat[,c(-1)]<-dat[idx,c(-1)]
     dat<-dat[idx<=input$cut,]
-    thePlot<-ggplot(dat,aes(x=likelihood,y=Race))+geom_segment(aes(yend=Race),xend=0)+
-      geom_point(size=3)+theme_bw()+xlab("Likelihood")+ggtitle("Likelihood Contribution")+xlim(0,max(dat$likelihood))
-      theme(panel.grid.major.x=element_blank(),
-            panel.grid.minor.x=element_blank(),
-            axis.title.y=element_blank(),
-            panel.grid.major.y=element_line(colour="grey60",linetype="dashed"))
-    print(thePlot)
+    idx<-idx[idx<=input$cut]
+    ecm <- reshape2::melt(dat, id = 'Race')
+    thePlot<-hPlot(value ~ Race, data = ecm, type = 'bar', group = 'variable', group.na = 'NA\'s',title='Bayes Classifier')
+    thePlot$addParams(dom = 'prior_plot')
+    return(thePlot)
+    
     
   })
   
-  output$prior_plot<-renderPlot({
-    dat<-haplotypesData ()[['prior']]
-    idx<-haplotypesData ()[['idx']]
-    idx<-abs(order(idx)-(length(idx)+1))###generate ranking 1 to N
-    dat<-dat[idx<=input$cut,]
-    thePlot<-ggplot(dat,aes(x=Prior,y=Race))+geom_segment(aes(yend=Race),xend=0)+
-      geom_point(size=3)+theme_bw()+xlab("Prior")+ggtitle("Prior Contribution")+xlim(0,max(dat$Prior))
-      theme(panel.grid.major.x=element_blank(),
-            panel.grid.minor.x=element_blank(),
-            axis.title.y=element_blank(),
-            panel.grid.major.y=element_line(colour="grey60",linetype="dashed"))
-    print(thePlot)
-    
-  })
-  
-  output$call_plot<-renderPlot({
-    dat<-haplotypesData ()[['call']]
-    idx<-haplotypesData ()[['idx']]
-    idx<-abs(order(idx)-(length(idx)+1))###generate ranking 1 to N
-    dat<-dat[idx<=input$cut,]
-    thePlot<-ggplot(dat,aes(x=Probability,y=Race))+geom_segment(aes(yend=Race),xend=0)+
-      geom_point(size=3)+theme_bw()+xlab("Probability")+ggtitle("Bayes Classifier Call")+xlim(0,max(dat$Probability))+
-    theme(panel.grid.major.x=element_blank(),
-          panel.grid.minor.x=element_blank(),
-          axis.title.y=element_blank(),
-          panel.grid.major.y=element_line(colour="grey60",linetype="dashed"))
-    print(thePlot)
-    
-  })
   
   
   output$call_table<-renderDataTable({
@@ -343,12 +325,7 @@ shinyServer(function(input, output, session){ # pass in a session argument
     
   })
 
-  
-
-  
-
-
-  
+ 
   p<-reactive({
     input$goButton###make this sit till clicked
     geo_loc<-geo_loc()
@@ -362,6 +339,7 @@ shinyServer(function(input, output, session){ # pass in a session argument
   
   
   census_dat<-reactive({
+    browser()
     input$goButton ###sit till called
     ####get data from the map fit
     p<-p()[["p"]]
@@ -370,6 +348,7 @@ shinyServer(function(input, output, session){ # pass in a session argument
     y_max=max(p$data$lat)
     y_min=min(p$dat$lat)
     
+    ###the standard zoom extent x_max-x_min for 13 is 0.1098633 and y_max-y_min is 0.07768578
     ####create search grid for density smoothing
     seg<-isolate(input$grid)
     delta_x=(x_max-x_min)/(seg-1)
@@ -423,11 +402,19 @@ shinyServer(function(input, output, session){ # pass in a session argument
   
   
   plot_dat<-reactive({
+    browser()
+    input$update_dir
     p<-p()[["p"]]
     delta_x<-census_dat()[["delta_x"]]
     delta_y<-census_dat()[["delta_y"]]
     census<-census_dat()[["Neighbors"]]
     individual<-census_dat()[["Individual"]]
+    
+    ####add in Dirichlet Prior Pseudo Counts#### 
+    census[,3:(ncol(census)-1)]<-census[,3:(ncol(census)-1)]+isolate(input$dir_prior)
+    census[,ncol(census)]<-census[,ncol(census)]+length(3:(ncol(census)-1))*isolate(input$dir_prior)
+    
+    
     sel<-c()
     for (i in 1:nrow(input$naive_prior)){
       map_naive<-map[chos_ini==input$naive_prior[i,1]]
@@ -506,15 +493,26 @@ shinyServer(function(input, output, session){ # pass in a session argument
       
     })
   
-  output$class_call<-renderPlot({
+  output$class_call<-renderChart({
       dat<-knn_call()[["call"]]
-      thePlot<-ggplot(dat,aes(x=mean,y=race))+geom_segment(aes(yend=race),xend=0)+
-        geom_point(size=3)+theme_bw()+xlab("Probability")+ggtitle("Prior Race Distribution Based on Census")+xlim(0,max(dat$mean))
-      theme(panel.grid.major.x=element_blank(),
-            panel.grid.minor.x=element_blank(),
-            axis.title.y=element_blank(),
-            panel.grid.major.y=element_line(colour="grey60",linetype="dashed"))
-      print(thePlot)
+      dat<-dat[order(dat$race),]
+      dat$mean<-round(dat$mean,2)
+      levels(dat$race)<-gsub("RACE","",levels(dat$race))
+      levels(dat$race)<-levels(dat$race)[nrow(dat):1]###flip levels
+      dat[,c(-1)]<-dat[order(dat$race,decreasing=TRUE),c(-1)]
+      dat$variable<-"Prior Probability based on Nearest Neighbors"
+      thePlot<-hPlot(mean ~ race, data = dat, type = 'bar', group = 'variable', group.na = 'NA\'s',title='Census Race Prior')
+      thePlot$addParams(dom = 'class_call')
+      return(thePlot)
+      
+      
+#       thePlot<-ggplot(dat,aes(x=mean,y=race))+geom_segment(aes(yend=race),xend=0)+
+#         geom_point(size=3)+theme_bw()+xlab("Probability")+ggtitle("Prior Race Distribution Based on Census")+xlim(0,max(dat$mean))
+#       theme(panel.grid.major.x=element_blank(),
+#             panel.grid.minor.x=element_blank(),
+#             axis.title.y=element_blank(),
+#             panel.grid.major.y=element_line(colour="grey60",linetype="dashed"))
+#       print(thePlot)
       
     })
     

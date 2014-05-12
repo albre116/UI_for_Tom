@@ -28,6 +28,8 @@ if(!require("spdep"))
   (install.packages("spdep"))
 if(!require("class"))
   (install.packages("class"))
+if(!require("rCharts"))
+  install_github("rCharts", "ramnathv")
 
 # dids <- c(
 #   52092152,
@@ -69,16 +71,7 @@ haplotypeImpute<-function(mug=mug_ini,populations=populations_ini[1]){
   host <- 'http://b1haplogic-s1:8080'
   httpHeaders <- c(Accept = "application/json",
                    'Content-Type' = 'application/json;charset=UTF-8')
-  
-  # Check if the webservice is available
-  # when accessing /impute path, it should return a welcome message such as:
-  # "Welcome to Imputation Service! (REST Version) AVAILABLE"
-  main_url = paste(host, '/impute', sep='')
-  available_text <- getURL(main_url)
-  if(substring(available_text, 1, 7) != "Welcome") {
-    print(paste("Webservice is not available at", main_url))
-    quit('no')
-  }
+
   
   # URL for retrieving haplotype pairs
   url = paste(host, '/impute/haplotype', sep='')
@@ -106,7 +99,9 @@ haplotypeImpute<-function(mug=mug_ini,populations=populations_ini[1]){
     #print("Response:")
     #print(response)
     # haplotype 
-    imputedHaplotypes <- fromJSON(response)[[1]]
+    res_json<- fromJSON(response)
+    if (length(res_json)==0){return(NULL)}
+    imputedHaplotypes <- res_json[[1]]
     size = length(imputedHaplotypes)
     options(stringsAsFactors=F)
     haplotypes = data.frame()
@@ -130,16 +125,8 @@ haplotypePairImpute<-function(mug=mug_ini,populations=populations_ini){
   host <- 'http://b1haplogic-s1:8080'
   httpHeaders <- c(Accept = "application/json",
                    'Content-Type' = 'application/json;charset=UTF-8')
-  
-  # Check if the webservice is available
-  # when accessing /impute path, it should return a welcome message such as:
-  # "Welcome to Imputation Service! (REST Version) AVAILABLE"
-  main_url = paste(host, '/impute', sep='')
-  available_text <- getURL(main_url)
-  if(substring(available_text, 1, 7) != "Welcome") {
-    print(paste("Webservice is not available at", main_url))
-    quit('no')
-  }
+
+
   
   # URL for retrieving haplotype pairs
   url = paste(host, '/impute/haplotype-pairs', sep='')
@@ -164,7 +151,10 @@ haplotypePairImpute<-function(mug=mug_ini,populations=populations_ini){
     #print("Response:")
     #print(response)
     # haplotype 
-    imputedHaplotypePairs <- fromJSON(response)[[1]]
+    
+    res_json<- fromJSON(response)
+    if (length(res_json)==0){return(NULL)}
+    imputedHaplotypePairs<-res_json[[1]]
     size = length(imputedHaplotypePairs)
     options(stringsAsFactors=F)
     haplotype.pairs = data.frame()
